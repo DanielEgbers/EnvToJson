@@ -1,0 +1,44 @@
+name: build
+
+on:
+  push:
+    branches:
+      - 'master'
+  pull_request:
+    branches:
+      - '**'
+
+env:
+  GitBranch: ${{ github.head_ref || github.ref_name }}
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: jirutka/setup-alpine@v1
+        with:
+          branch: v3.18
+      - name: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget
+      - name: dotnet restore
+        run: dotnet restore
+      - name: dotnet build
+        run: dotnet build --configuration Release --no-restore
+      - name: dotnet test
+        run: dotnet test --configuration Release --no-restore --verbosity normal
+      - name: dotnet publish
+        run: dotnet publish --configuration Release
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          path: artifacts/publish/EnvToJson/release/

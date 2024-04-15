@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+	<Target Name="SetAssemblyInfosUsingGit" BeforeTargets="PreBuildEvent">
+		<Exec Command="git --version"
+			  ConsoleToMSBuild="true"
+			  StandardOutputImportance="low"
+			  StandardErrorImportance="low"
+			  IgnoreExitCode="true">
+			<Output TaskParameter="ConsoleOutput" PropertyName="GitVersion" />
+		</Exec>
+		<PropertyGroup>
+			<IsGitInstalled>$(GitVersion.Trim().StartsWith('git version'))</IsGitInstalled>
+		</PropertyGroup>
+		<Warning Text="unable to use Git" Condition="'$(IsGitInstalled)'!='true'" />
+		<Exec Command="git branch --show-current"
+			  ConsoleToMSBuild="true"
+			  StandardOutputImportance="low"
+			  Condition="'$(IsGitInstalled)'=='true' And '$(GitBranch)'==''">
+			<Output TaskParameter="ConsoleOutput" PropertyName="GitBranch" />
+		</Exec>
+		<Exec Command='git describe HEAD --abbrev=0 --tags --match="v*" --exact-match'
+			  ConsoleToMSBuild="true"
+			  StandardOutputImportance="low"
+			  StandardErrorImportance="low"
+			  IgnoreExitCode="true"
+			  Condition="'$(IsGitInstalled)'=='true'">
+			<Output TaskParameter="ConsoleOutput" PropertyName="CurrentVersionTag" />
+		</Exec>
+		<Exec Command='git describe HEAD --abbrev=0 --tags --match="v*"'
+			  ConsoleToMSBuild="true"
+			  StandardOutputImportance="low"
+			  Condition="'$(IsGitInstalled)'=='true'">
+			<Output TaskParameter="ConsoleOutput" PropertyName="LastVersionTag" />
+		</Exec>
+		<Exec Command='git rev-list HEAD "^$(LastVersionTag)" --first-parent --count'
+			  ConsoleToMSBuild="true"
+			  StandardOutputImportance="low"
+			  Condition="'$(LastVersionTag)'!=''">
+			<Output TaskParameter="ConsoleOutput" PropertyName="BuildVersion" />
+		</Exec>
+		<PropertyGroup>
+			<GitBranch Condition="'$(GitBranch)'==''">dev</GitBranch>
+			<LastVersionTag Condition="'$(LastVersionTag)'==''">0.0.0</LastVersionTag>
+			<IsReleaseVersion>$(LastVersionTag.Equals($(CurrentVersionTag)))</IsReleaseVersion>
+			<BuildVersion Condition="'$(BuildVersion)'==''">0</BuildVersion>
+			<VersionPrefix>$(LastVersionTag.Trim('v'))</VersionPrefix>
+			<VersionSuffix></VersionSuffix>
+			<VersionSuffix Condition="'$(IsReleaseVersion)'!='true'">$([System.Text.RegularExpressions.Regex]::Replace($(GitBranch),'[^a-zA-Z\d]+','-')).$(BuildVersion)</VersionSuffix>
+			<Version>$(VersionPrefix)</Version>
+			<Version Condition="'$(VersionSuffix)'!=''">$(VersionPrefix)-$(VersionSuffix)</Version>
+			<PackageVersion>$(Version)</PackageVersion>
+			<Description Condition="'$(Description)'==''">$(ProjectName)</Description>
+			<PackageDescription>$(Description)</PackageDescription>
+		</PropertyGroup>
+	</Target>
+
+	<Target Name="OutputInformationalVersion" AfterTargets="PostBuildEvent">
+		<Message Text="Version $(InformationalVersion)" Importance="high" />
+	</Target>
+
+</Project>
