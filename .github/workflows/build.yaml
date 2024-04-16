@@ -12,6 +12,9 @@ on:
       - published
   workflow_dispatch:
 
+permissions:
+    contents: write
+
 env:
   GitBranch: ${{ github.head_ref || github.ref_name }}
   AlpineDotnet: /home/runner/work/EnvToJson/EnvToJson/.dotnet
@@ -19,7 +22,7 @@ env:
 jobs:
   build:
     name: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -40,6 +43,7 @@ jobs:
             libintl
             libssl1.1
             libstdc++
+            zip
             zlib
             zlib-dev
       - name: git config
@@ -67,13 +71,33 @@ jobs:
         run: dotnet build --configuration Release --no-restore
       - name: dotnet test
         run: dotnet test --configuration Release --no-restore --verbosity normal
-      - name: dotnet publish
-        env:
-          DOTNET_ROOT: ${{ env.AlpineDotnet }}
-        run: ./.dotnet/dotnet publish --configuration Release
-        shell: alpine.sh --root {0}
-      - name: upload artifacts
+      - name: dotnet publish - native-linux
+        run: |
+          rm -rf artifacts/publish
+          dotnet publish --configuration Release
+          zip --recurse-paths --junk-paths EnvToJson-native-linux.zip artifacts/publish/EnvToJson/release
+      - name: upload artifact - native-linux
         uses: actions/upload-artifact@v4
         with:
-          name: linux-musl
+          name: EnvToJson-native-linux
           path: artifacts/publish/EnvToJson/release/
+      - name: dotnet publish - native-linux-musl
+        env:
+          DOTNET_ROOT: ${{ env.AlpineDotnet }}
+        run: |
+          rm -rf artifacts/publish
+          ./.dotnet/dotnet publish --configuration Release
+          zip --recurse-paths --junk-paths EnvToJson-native-linux-musl.zip artifacts/publish/EnvToJson/release
+        shell: alpine.sh --root {0}
+      - name: upload artifact - native-linux-musl
+        uses: actions/upload-artifact@v4
+        with:
+          name: EnvToJson-native-linux-musl
+          path: artifacts/publish/EnvToJson/release/
+      - name: upload release artifacts
+        if: github.event_name == 'release' && github.event.action == 'published'
+        env:
+          GITHUB_TOKEN: ${{ github.TOKEN }}
+        run: |
+          gh release upload ${{github.event.release.tag_name}} EnvToJson-native-linux.zip
+          gh release upload ${{github.event.release.tag_name}} EnvToJson-native-linux-musl.zip
