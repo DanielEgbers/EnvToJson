@@ -75,7 +75,7 @@ jobs:
         run: |
           rm -rf artifacts/publish
           dotnet publish --configuration Release
-          zip --recurse-paths --junk-paths EnvToJson-native-linux.zip artifacts/publish/EnvToJson/release
+          zip --recurse-paths --junk-paths EnvToJson-native-linux.zip artifacts/publish/EnvToJson/release -x *.dbg
       - name: upload artifact - native-linux
         uses: actions/upload-artifact@v4
         with:
@@ -87,7 +87,7 @@ jobs:
         run: |
           rm -rf artifacts/publish
           ./.dotnet/dotnet publish --configuration Release
-          zip --recurse-paths --junk-paths EnvToJson-native-linux-musl.zip artifacts/publish/EnvToJson/release
+          zip --recurse-paths --junk-paths EnvToJson-native-linux-musl.zip artifacts/publish/EnvToJson/release -x *.dbg
         shell: alpine.sh --root {0}
       - name: upload artifact - native-linux-musl
         uses: actions/upload-artifact@v4
