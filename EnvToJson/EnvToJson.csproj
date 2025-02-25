@@ -8,6 +8,7 @@
 		<ImplicitUsings>disable</ImplicitUsings>
 		<PublishAot>true</PublishAot>
 		<InvariantGlobalization>true</InvariantGlobalization>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 
 	<Import Project="../GitVersionTag.targets" />
