@@ -1,5 +1,5 @@
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Shouldly;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -27,9 +27,9 @@ public class ConfigurationTests
 
         _output.WriteLine(configuration.GetDebugView());
 
-        configuration.GetValue<string>(valueA.Key).Should().Be(valueA.Value);
-        configuration.GetValue<int>(valueB.Key).Should().Be(valueB.Value);
-        configuration.GetValue<bool>(valueC.Key).Should().Be(valueC.Value);
+        configuration.GetValue<string>(valueA.Key).ShouldBe(valueA.Value);
+        configuration.GetValue<int>(valueB.Key).ShouldBe(valueB.Value);
+        configuration.GetValue<bool>(valueC.Key).ShouldBe(valueC.Value);
     }
 
     [Fact]
@@ -55,13 +55,13 @@ public class ConfigurationTests
 
         var values = configuration.GetSection(baseKey).Get<string[]>()!;
 
-        values.Should().NotBeNull();
-        values.Should().HaveCount(4);
+        values.ShouldNotBeNull();
+        values.Length.ShouldBe(4);
 
-        values[0].Should().Be(valueA.Value);
-        values[1].Should().Be(valueB.Value);
-        values[2].Should().Be(valueC.Value);
-        values[3].Should().Be(valueE.Value);
+        values[0].ShouldBe(valueA.Value);
+        values[1].ShouldBe(valueB.Value);
+        values[2].ShouldBe(valueC.Value);
+        values[3].ShouldBe(valueE.Value);
     }
 
     [Fact]
@@ -87,13 +87,13 @@ public class ConfigurationTests
 
         var values = configuration.GetSection(baseKey).Get<int[]>()!;
 
-        values.Should().NotBeNull();
-        values.Should().HaveCount(4);
+        values.ShouldNotBeNull();
+        values.Length.ShouldBe(4);
 
-        values[0].Should().Be(valueA.Value);
-        values[1].Should().Be(valueB.Value);
-        values[2].Should().Be(valueC.Value);
-        values[3].Should().Be(valueE.Value);
+        values[0].ShouldBe(valueA.Value);
+        values[1].ShouldBe(valueB.Value);
+        values[2].ShouldBe(valueC.Value);
+        values[3].ShouldBe(valueE.Value);
     }
 
     private record TestObject()
@@ -132,16 +132,16 @@ public class ConfigurationTests
 
         var values = configuration.GetSection(baseKey).Get<TestObject[]>()!;
 
-        values.Should().NotBeNull();
-        values.Should().HaveCount(5);
+        values.ShouldNotBeNull();
+        values.Length.ShouldBe(5);
 
-        values[0].A.Should().Be(valueAA.Value);
-        values[0].B.Should().Be(valueAB.Value);
-        values[0].Q.Should().Be(valueAQ.Value);
-        values[1].A.Should().Be(valueB.Value);
-        values[2].A.Should().Be(valueC.Value);
-        values[3].B.Should().Be(valueD.Value);
-        values[4].A.Should().Be(valueEA.Value);
-        values[4].B.Should().Be(valueEB.Value);
+        values[0].A.ShouldBe(valueAA.Value);
+        values[0].B.ShouldBe(valueAB.Value);
+        values[0].Q.ShouldBe(valueAQ.Value);
+        values[1].A.ShouldBe(valueB.Value);
+        values[2].A.ShouldBe(valueC.Value);
+        values[3].B.ShouldBe(valueD.Value);
+        values[4].A.ShouldBe(valueEA.Value);
+        values[4].B.ShouldBe(valueEB.Value);
     }
 }

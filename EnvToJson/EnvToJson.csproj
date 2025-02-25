@@ -11,8 +11,6 @@
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 
-	<Import Project="../GitVersionTag.targets" />
-
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Diagnostics" />
 		<PackageReference Include="JsonSchema.Net" />
@@ -20,4 +18,6 @@
 		<PackageReference Include="System.CommandLine" />
 	</ItemGroup>
 
+	<Import Project="../GitVersionTag.targets" />
+	
 </Project>
