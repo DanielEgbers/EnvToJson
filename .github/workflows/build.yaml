@@ -31,17 +31,16 @@ jobs:
       - name: setup alpine
         uses: jirutka/setup-alpine@v1
         with:
-          branch: v3.18
+          branch: v3.21
           packages: >
             bash
             build-base
+            ca-certificates-bundle
             clang
             git
             icu-libs
-            krb5-libs
             libgcc
-            libintl
-            libssl1.1
+            libssl3
             libstdc++
             zip
             zlib
