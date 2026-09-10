@@ -15,24 +15,21 @@ on:
 permissions:
     contents: write
 
-env:
-  AlpineDotnet: /home/runner/work/EnvToJson/EnvToJson/.dotnet
-
 jobs:
   test:
     name: test
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: setup dotnet
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - name: setup cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.Packages.props') }}
@@ -46,38 +43,112 @@ jobs:
         run: dotnet test --configuration Release --no-restore --verbosity normal
 
   publish:
-    name: publish (${{ matrix.variant }})
+    name: publish (${{ matrix.arch }})
     needs: test
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
+    env:
+      TEST_IMAGE: ubuntu
+      SUFFIX: ''
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - variant: x86_64
-            runner: ubuntu-latest
-            musl: false
-            test_image: ubuntu:24.04
-          - variant: x86_64-musl
-            runner: ubuntu-latest
-            musl: true
-            test_image: alpine:3.21
-          - variant: aarch64
-            runner: ubuntu-24.04-arm
-            musl: false
-            test_image: ubuntu:24.04
-          - variant: aarch64-musl
-            runner: ubuntu-24.04-arm
-            musl: true
-            test_image: alpine:3.21
+        arch: [x86_64, aarch64]
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
+      - &checkout
+        name: checkout
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - &setup-cache
+        name: setup cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget
+      - name: setup dotnet
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet restore
+        run: dotnet restore
+      - name: dotnet publish
+        run: |
+          rm -rf artifacts/publish
+          dotnet publish --configuration Release -p:DebugType=None
+          zip --recurse-paths --junk-paths EnvToJson-linux-${{ matrix.arch }}.zip artifacts/publish/EnvToJson/release
+      - &test-binary
+        name: test binary (docker)
+        run: |
+          BIN="$(pwd)/artifacts/publish/EnvToJson/release/EnvToJson"
+          sudo chmod +x "$BIN"
+
+          # basic: environment variable appears in output
+          OUT=$(docker run --rm -v "$BIN:/EnvToJson:ro" \
+            -e HELLO=world \
+            "${{ env.TEST_IMAGE }}" /EnvToJson)
+          echo "$OUT"
+          echo "$OUT" | grep -q '"HELLO": "world"' || { echo "FAIL: basic"; exit 1; }
+
+          # prefix: strips prefix, excludes other variables
+          OUT=$(docker run --rm -v "$BIN:/EnvToJson:ro" \
+            -e APP__KEY=val -e OTHER=ignored \
+            "${{ env.TEST_IMAGE }}" /EnvToJson --prefix APP__)
+          echo "$OUT"
+          echo "$OUT" | grep -q '"KEY": "val"' || { echo "FAIL: prefix key"; exit 1; }
+          if echo "$OUT" | grep -q '"APP"';   then echo "FAIL: prefix not stripped"; exit 1; fi
+          if echo "$OUT" | grep -q '"OTHER"'; then echo "FAIL: OTHER not excluded"; exit 1; fi
+
+          # nested: double-underscore produces nested objects
+          OUT=$(docker run --rm -v "$BIN:/EnvToJson:ro" \
+            -e DB__HOST=localhost -e DB__PORT=5432 \
+            "${{ env.TEST_IMAGE }}" /EnvToJson --prefix DB__)
+          echo "$OUT"
+          echo "$OUT" | grep -q '"HOST": "localhost"' || { echo "FAIL: nested HOST"; exit 1; }
+          echo "$OUT" | grep -q '"PORT": "5432"'      || { echo "FAIL: nested PORT"; exit 1; }
+
+          # schema: invalid input must exit non-zero
+          echo '{"type":"object","required":["MISSING"]}' > /tmp/test-schema.json
+          docker run --rm -v "$BIN:/EnvToJson:ro" -v /tmp/test-schema.json:/schema.json:ro \
+            -e KEY=val \
+            "${{ env.TEST_IMAGE }}" /EnvToJson --schema /schema.json \
+            && { echo "FAIL: expected non-zero exit for schema violation"; exit 1; } || true
+
+          echo "All docker tests passed"
+
+      - &upload-artifact
+        name: upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: EnvToJson-linux-${{ matrix.arch }}${{ env.SUFFIX }}
+          path: artifacts/publish/EnvToJson/release/
+      - &upload-release
+        name: upload release artifact
+        if: github.event_name == 'release' && github.event.action == 'published'
+        env:
+          GITHUB_TOKEN: ${{ github.TOKEN }}
+        run: gh release upload ${{ github.event.release.tag_name }} EnvToJson-linux-${{ matrix.arch }}${{ env.SUFFIX }}.zip
+
+  publish-musl:
+    name: publish (${{ matrix.arch }}-musl)
+    needs: test
+    runs-on: ubuntu-24.04
+    env:
+      TEST_IMAGE: alpine
+      SUFFIX: -musl
+      ALPINE_DOTNET: /home/runner/work/EnvToJson/EnvToJson/.dotnet
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - *checkout
       - name: setup alpine
-        if: matrix.musl
         uses: jirutka/setup-alpine@v1
         with:
-          branch: v3.21
+          branch: latest-stable
+          arch: ${{ matrix.arch }}
           packages: >
             bash
             build-base
@@ -92,100 +163,31 @@ jobs:
             zlib
             zlib-dev
       - name: git config
-        if: matrix.musl
         run: git config --global --add safe.directory "$(pwd)"
         shell: alpine.sh --root {0}
+      - *setup-cache
       - name: setup dotnet
-        if: ${{ !matrix.musl }}
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      - name: setup cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget
-      - name: setup dotnet (alpine)
-        if: matrix.musl
         env:
-          DOTNET_ROOT: ${{ env.AlpineDotnet }}
+          DOTNET_ROOT: ${{ env.ALPINE_DOTNET }}
         run: |
           wget https://dot.net/v1/dotnet-install.sh
           chmod +x ./dotnet-install.sh
-          ./dotnet-install.sh --channel 10.0 --no-path --install-dir "${{ env.AlpineDotnet }}"
+          ./dotnet-install.sh --channel 10.0 --no-path --install-dir "${{ env.ALPINE_DOTNET }}"
           ./.dotnet/dotnet --info
         shell: alpine.sh --root {0}
       - name: dotnet restore
-        if: ${{ !matrix.musl }}
-        run: dotnet restore
-      - name: dotnet restore (alpine)
-        if: matrix.musl
         env:
-          DOTNET_ROOT: ${{ env.AlpineDotnet }}
-        run: dotnet restore
+          DOTNET_ROOT: ${{ env.ALPINE_DOTNET }}
+        run: $DOTNET_ROOT/dotnet restore
         shell: alpine.sh --root {0}
       - name: dotnet publish
-        if: ${{ !matrix.musl }}
-        run: |
-          rm -rf artifacts/publish
-          dotnet publish --configuration Release -p:DebugType=None
-          zip --recurse-paths --junk-paths EnvToJson-linux-${{ matrix.variant }}.zip artifacts/publish/EnvToJson/release
-      - name: dotnet publish (alpine)
-        if: matrix.musl
         env:
-          DOTNET_ROOT: ${{ env.AlpineDotnet }}
+          DOTNET_ROOT: ${{ env.ALPINE_DOTNET }}
         run: |
           rm -rf artifacts/publish
           ./.dotnet/dotnet publish --configuration Release -p:DebugType=None
-          zip --recurse-paths --junk-paths EnvToJson-linux-${{ matrix.variant }}.zip artifacts/publish/EnvToJson/release
+          zip --recurse-paths --junk-paths EnvToJson-linux-${{ matrix.arch }}-musl.zip artifacts/publish/EnvToJson/release
         shell: alpine.sh --root {0}
-      - name: test binary (docker)
-        run: |
-          BIN="$(pwd)/artifacts/publish/EnvToJson/release/EnvToJson"
-          chmod +x "$BIN"
-
-          # basic: environment variable appears in output
-          OUT=$(docker run --rm -v "$BIN:/EnvToJson:ro" \
-            -e HELLO=world \
-            "${{ matrix.test_image }}" /EnvToJson)
-          echo "$OUT"
-          echo "$OUT" | grep -q '"HELLO": "world"' || { echo "FAIL: basic"; exit 1; }
-
-          # prefix: strips prefix, excludes other variables
-          OUT=$(docker run --rm -v "$BIN:/EnvToJson:ro" \
-            -e APP__KEY=val -e OTHER=ignored \
-            "${{ matrix.test_image }}" /EnvToJson --prefix APP__)
-          echo "$OUT"
-          echo "$OUT" | grep -q '"KEY": "val"' || { echo "FAIL: prefix key"; exit 1; }
-          if echo "$OUT" | grep -q '"APP"';   then echo "FAIL: prefix not stripped"; exit 1; fi
-          if echo "$OUT" | grep -q '"OTHER"'; then echo "FAIL: OTHER not excluded"; exit 1; fi
-
-          # nested: double-underscore produces nested objects
-          OUT=$(docker run --rm -v "$BIN:/EnvToJson:ro" \
-            -e DB__HOST=localhost -e DB__PORT=5432 \
-            "${{ matrix.test_image }}" /EnvToJson --prefix DB__)
-          echo "$OUT"
-          echo "$OUT" | grep -q '"HOST": "localhost"' || { echo "FAIL: nested HOST"; exit 1; }
-          echo "$OUT" | grep -q '"PORT": "5432"'      || { echo "FAIL: nested PORT"; exit 1; }
-
-          # schema: invalid input must exit non-zero
-          echo '{"type":"object","required":["MISSING"]}' > /tmp/test-schema.json
-          docker run --rm -v "$BIN:/EnvToJson:ro" -v /tmp/test-schema.json:/schema.json:ro \
-            -e KEY=val \
-            "${{ matrix.test_image }}" /EnvToJson --schema /schema.json \
-            && { echo "FAIL: expected non-zero exit for schema violation"; exit 1; } || true
-
-          echo "All docker tests passed"
-
-      - name: upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: EnvToJson-linux-${{ matrix.variant }}
-          path: artifacts/publish/EnvToJson/release/
-      - name: upload release artifact
-        if: github.event_name == 'release' && github.event.action == 'published'
-        env:
-          GITHUB_TOKEN: ${{ github.TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} EnvToJson-linux-${{ matrix.variant }}.zip
+      - *test-binary
+      - *upload-artifact
+      - *upload-release
