@@ -56,12 +56,13 @@ public class ConfigurationTests
         var values = configuration.GetSection(baseKey).Get<string[]>()!;
 
         values.ShouldNotBeNull();
-        values.Length.ShouldBe(4);
+        values.Length.ShouldBe(5);
 
         values[0].ShouldBe(valueA.Value);
         values[1].ShouldBe(valueB.Value);
         values[2].ShouldBe(valueC.Value);
-        values[3].ShouldBe(valueE.Value);
+        values[3].ShouldBeNull();
+        values[4].ShouldBe(valueE.Value);
     }
 
     [Fact]

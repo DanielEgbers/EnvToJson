@@ -1,8 +1,10 @@
 ﻿using CommunityToolkit.Diagnostics;
 using Json.More;
 using Json.Schema;
+using Json.Schema.Keywords;
 using Microsoft.Extensions.Configuration;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.Globalization;
@@ -12,25 +14,29 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
-var prefixOption = new Option<string?>(
-    name: "--prefix",
-    description: "The prefix that environment variable names must start with. The prefix will be removed from the environment variable names"
-);
+var prefixOption = new Option<string>("--prefix")
+{
+    Description = "The prefix that environment variable names must start with. The prefix will be removed from the environment variable names"
+};
 
-var schemaOption = new Option<FileInfo?>(
-    name: "--schema"
-);
+var schemaOption = new Option<FileInfo>("--schema");
 
 var rootCommand = new RootCommand()
 {
     prefixOption,
     schemaOption,
 };
-rootCommand.SetHandler(Main, prefixOption, schemaOption);
+rootCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
+{
+    var environmentVariablesPrefix = parseResult.GetValue(prefixOption);
+    var jsonSchemaFile = parseResult.GetValue(schemaOption);
+    return Main(environmentVariablesPrefix, jsonSchemaFile);
+});
 
-return await rootCommand.InvokeAsync(args);
+return await rootCommand.Parse(args).InvokeAsync();
 
 Task<int> Main(string? environmentVariablesPrefix, FileInfo? jsonSchemaFile)
 {
@@ -58,7 +64,7 @@ Task<int> Main(string? environmentVariablesPrefix, FileInfo? jsonSchemaFile)
         }
         while (targetTypes.Any(t => t.Value is SchemaValueType.Array));
 
-        var evaluationResults = jsonSchema.Evaluate(jsonNode, options: new()
+        var evaluationResults = jsonSchema.Evaluate(NodeToElement(jsonNode), options: new()
         {
             OutputFormat = OutputFormat.List,
         });
@@ -67,9 +73,9 @@ Task<int> Main(string? environmentVariablesPrefix, FileInfo? jsonSchemaFile)
         {
             ConsoleWriteJson(jsonNode);
 
-            var errorDetails = evaluationResults.Details
+            var errorDetails = (evaluationResults.Details ?? [])
                 .Where(d => !d.IsValid && d.Errors?.Any() is true)
-                .Select(d => $"{d.InstanceLocation}: {string.Join(", ", d.Errors?.Values ?? Array.Empty<string>())} [{d.EvaluationPath}]")
+                .Select(d => $"{d.InstanceLocation}: {string.Join(", ", (IEnumerable<string>?)d.Errors?.Values ?? Array.Empty<string>())} [{d.EvaluationPath}]")
                 .ToList();
             Console.Error.WriteLine($"Schema validation errors:{Environment.NewLine}{string.Join(Environment.NewLine, errorDetails)}");
 
@@ -192,9 +198,9 @@ Dictionary<string, SchemaValueType> GetTargetTypes(JsonNode? jsonNode, JsonSchem
         replacement: @"(""\w+"")"
     ));
 
-    var evaluationResults = jsonSchema.Evaluate(jsonNode, options: evaluationOptions);
+    var evaluationResults = jsonSchema.Evaluate(NodeToElement(jsonNode), options: evaluationOptions);
 
-    return evaluationResults.Details
+    return (evaluationResults.Details ?? [])
         .Select(d =>
         {
             if (d.Errors?.TryGetValue("type", out var typeErrorMessage) is not true)
@@ -222,25 +228,42 @@ void RemoveAdditionalProperties(JsonNode? jsonNode, JsonSchema jsonSchema)
     if (jsonNode is not JsonObject jsonObject)
         return;
 
-    if (jsonSchema.GetJsonType() is not SchemaValueType.Object)
+    var schemaRoot = jsonSchema.Root;
+    if (schemaRoot is null)
         return;
 
-    if (jsonSchema.GetAdditionalProperties()?.BoolValue is not false)
+    if (schemaRoot.Keywords.FirstOrDefault(k => k.Handler is TypeKeyword)?.RawValue.GetSchemaValueType() is not SchemaValueType.Object)
         return;
 
-    var evaluationResults = jsonSchema.Evaluate(jsonNode, options: new()
+    if (schemaRoot.Keywords.FirstOrDefault(k => k.Handler is AdditionalPropertiesKeyword)?.RawValue.ValueKind is not JsonValueKind.False)
+        return;
+
+    var evaluationResults = jsonSchema.Evaluate(NodeToElement(jsonNode), options: new()
     {
         OutputFormat = OutputFormat.List,
     });
 
-    var propertyNames = evaluationResults.Details
-        .Where(d => !d.IsValid && d.EvaluationPath.Segments.Any(s => s.Value is "additionalProperties"))
-        .Where(d => d.InstanceLocation.Segments.Length is 1)
-        .Select(d => d.InstanceLocation.Segments.Single().Value)
+    var propertyNames = (evaluationResults.Details ?? [])
+        .Where(d => !d.IsValid && Enumerable.Range(0, d.EvaluationPath.SegmentCount).Any(i => d.EvaluationPath.GetSegment(i).Equals("additionalProperties")))
+        .Where(d => d.InstanceLocation.SegmentCount is 1)
+        .Select(d => new string(d.InstanceLocation.GetSegment(0).AsSpan()))
         .ToList();
 
     foreach (var propertyName in propertyNames)
         jsonObject.Remove(propertyName);
+}
+
+JsonElement NodeToElement(JsonNode? node)
+{
+    var buffer = new ArrayBufferWriter<byte>();
+    using var writer = new Utf8JsonWriter(buffer);
+    if (node is null)
+        writer.WriteNullValue();
+    else
+        node.WriteTo(writer);
+    writer.Flush();
+    using var doc = JsonDocument.Parse(buffer.WrittenMemory);
+    return doc.RootElement.Clone();
 }
 
 [JsonSerializable(typeof(SchemaValueType))]
