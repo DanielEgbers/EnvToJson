@@ -3,6 +3,10 @@
 	<!-- See https://aka.ms/dotnet/msbuild/customize for more details on customizing your build -->
 
 	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>disable</ImplicitUsings>
 		<UseArtifactsOutput>true</UseArtifactsOutput>
 	</PropertyGroup>
 

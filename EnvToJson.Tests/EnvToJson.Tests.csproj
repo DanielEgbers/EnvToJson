@@ -1,13 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net10.0</TargetFramework>
-		<LangVersion>latest</LangVersion>
-		<Nullable>enable</Nullable>
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
-		<InvariantGlobalization>true</InvariantGlobalization>
-		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -24,6 +19,7 @@
 		<PackageReference Include="Microsoft.NET.Test.Sdk" />
 		<PackageReference Include="Shouldly" />
 		<PackageReference Include="xunit" />
+		<PackageReference Include="JsonSchema.Net" />
 		<PackageReference Include="xunit.runner.visualstudio">
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -32,6 +28,10 @@
 
 	<ItemGroup>
 		<AdditionalFiles Include="BannedSymbols.txt" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../EnvToJson/EnvToJson.csproj" />
 	</ItemGroup>
 
 </Project>
